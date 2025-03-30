@@ -16,55 +16,68 @@
       tuda-logo,
     }:
     let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
+      systems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
+      forAllSystems = nixpkgs.lib.genAttrs systems;
     in
     {
       # minimal example shell for using algotex
-      devShells.${system}.default = pkgs.mkShell {
-        buildInputs = [
-          pkgs.python313Packages.pygments
-          self.packages.${system}.latex_with_algotex
-        ];
-      };
 
-      packages.${system} = {
-        # algotex and logo only
-        algotex = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
-          name = "algotex";
-          src = ./.;
-          passthru = {
-            pkgs = [ finalAttrs.finalPackage ];
-            tlType = "run";
-            tlDeps = with pkgs.texlive; [ latex ];
+      devShells = forAllSystems (system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in {
+          default = pkgs.mkShell {
+            buildInputs = [
+              pkgs.python313Packages.pygments
+              pkgs.latex_with_algotex
+            ];
           };
-          nativeBuildInputs = with pkgs; [ librsvg ];
-          installPhase = ''
-            runHook preInstall
+        }
+      );
 
-            # copy algotex files
-            algotex_path=$out/tex/latex/algotex
-            mkdir -p $algotex_path
-            cp $src/tex/* $algotex_path/
+      packages = forAllSystems (system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in {
+          # algotex and logo only
+          algotex = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
+            name = "algotex";
+            src = ./.;
+            passthru = {
+              pkgs = [ finalAttrs.finalPackage ];
+              tlType = "run";
+              tlDeps = with pkgs.texlive; [ latex ];
+            };
+            nativeBuildInputs = with pkgs; [ librsvg ];
+            installPhase = ''
+              runHook preInstall
 
-            # build tuda logo
-            logo_path=$out/tex/latex/local
-            mkdir -p $logo_path
-            rsvg-convert -f pdf -o $logo_path/tuda_logo.pdf ${tuda-logo}
+              # copy algotex files
+              algotex_path=$out/tex/latex/algotex
+              mkdir -p $algotex_path
+              cp $src/tex/* $algotex_path/
 
-            runHook postInstall
-          '';
-          dontConfigure = true;
-          dontBuild = true;
-        });
+              # build tuda logo
+              logo_path=$out/tex/latex/local
+              mkdir -p $logo_path
+              rsvg-convert -f pdf -o $logo_path/tuda_logo.pdf ${tuda-logo}
 
-        # full texlive distribution with algotex and the logo file
-        latex_with_algotex = pkgs.texlive.combine {
-          inherit (pkgs.texlive) scheme-full;
-          inherit (self.packages.${system}) algotex;
-        };
+              runHook postInstall
+            '';
+            dontConfigure = true;
+            dontBuild = true;
+          });
 
-        default = self.packages.${system}.latex_with_algotex;
-      };
+          # full texlive distribution with algotex and the logo file
+          default = pkgs.texlive.combine {
+            inherit (pkgs.texlive) scheme-full;
+            inherit (self.packages.${system}) algotex;
+          };
+        }
+      );
     };
 }
